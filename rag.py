@@ -18,7 +18,7 @@ load_dotenv()
 
 # Claude handles GENERATION only (Anthropic has no embedding model).
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-CHAT_MODEL = "claude-3-5-haiku-latest"  # cheap + fast to start; swap for a bigger Claude as needed
+CHAT_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast to start; swap for a bigger Claude as needed
 
 
 # ---------- 1. CHUNKING ----------

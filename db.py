@@ -8,7 +8,7 @@ query just does a fast similarity search against them.
 import os
 import psycopg
 from pgvector.psycopg import register_vector
-from dotenv import load_dotenv
+from dotenv  import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -59,30 +59,15 @@ def init_db():
 
 def insert_chunks(rows):
     """rows: list of (source, content, embedding) tuples."""
+    # str(list) -> "[...]" matches pgvector's literal format; ::vector casts it.
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO doc_chunks (source, content, embedding) VALUES (%s, %s, %s);",
-                rows,
+                "INSERT INTO doc_chunks (source, content, embedding) VALUES (%s, %s, %s::vector);",
+                [(source, content, str(emb)) for source, content, emb in rows],
             )
         conn.commit()
 
-
-def search_chunks(query_embedding, top_k=5):
-    """Return the top_k most similar chunks to the query embedding.
-    Uses cosine distance (<=>). Lower distance = more similar."""
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT content, source, embedding <=> %s AS distance
-                FROM doc_chunks
-                ORDER BY distance ASC
-                LIMIT %s;
-                """,
-                (query_embedding, top_k),
-            )
-            return cur.fetchall()  # list of (content, source, distance)
 
 def delete_by_source(source):
     """Remove all chunks that came from a given source (filename).
@@ -94,3 +79,23 @@ def delete_by_source(source):
             deleted = cur.rowcount
         conn.commit()
     return deleted
+
+
+def search_chunks(query_embedding, top_k=5):
+    """Return the top_k most similar chunks to the query embedding.
+    Uses cosine distance (<=>). Lower distance = more similar."""
+    # str(list) -> "[0.1, 0.2, ...]" which is exactly pgvector's literal format.
+    # The ::vector cast tells Postgres to treat it as a vector, not an array.
+    vec_literal = str(query_embedding)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT content, source, embedding <=> %s::vector AS distance
+                FROM doc_chunks
+                ORDER BY distance ASC
+                LIMIT %s;
+                """,
+                (vec_literal, top_k),
+            )
+            return cur.fetchall()  # list of (content, source, distance)
