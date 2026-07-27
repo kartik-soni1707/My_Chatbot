@@ -18,7 +18,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 # PROD NOTE: if you switch to a hosted API model, change this to match it
 # (text-embedding-3-small=1536, voyage-3.5=1024) AND re-embed the whole corpus,
 # since vectors from different models aren't comparable.
-EMBEDDING_DIM = 384
+EMBEDDING_DIM = 768
 
 
 def get_conn():

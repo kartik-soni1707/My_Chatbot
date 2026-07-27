@@ -1,8 +1,8 @@
 fastapi
 uvicorn[standard]
 anthropic
-sentence-transformers
 psycopg[binary]
 pgvector
 python-dotenv
 pydantic
+google-genai

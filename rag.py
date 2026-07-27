@@ -11,7 +11,8 @@ to a hosted embedding API.
 """
 import os
 from anthropic import Anthropic
-from sentence_transformers import SentenceTransformer
+from google import genai
+from google.genai import types
 from db import insert_chunks, search_chunks, delete_by_source
 from dotenv import load_dotenv
 load_dotenv()
@@ -20,6 +21,12 @@ load_dotenv()
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 CHAT_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast to start; swap for a bigger Claude as needed
 
+# --- Embeddings: Google Gemini (free tier, no local model) ---
+gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+EMBEDDING_MODEL = "gemini-embedding-001"
+# gemini-embedding-001 defaults to 3072 dims but supports truncation to 768/1536/3072.
+# We use 768 (smaller = less storage). MUST match EMBEDDING_DIM in db.py.
+EMBEDDING_OUTPUT_DIM = 768
 
 # ---------- 1. CHUNKING ----------
 # This is the single biggest lever on RAG quality. Start simple, tune later.
@@ -35,41 +42,32 @@ def chunk_text(text, chunk_size=500, overlap=50):
     return [c for c in chunks if c.strip()]
 
 
-# ---------- 2. EMBEDDING ----------
-# LOCAL model: free, no API key, runs on your CPU. Outputs 384-dim vectors.
-# The model downloads once on first run (~90MB), then loads from cache.
-_embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-# ============================ PROD NOTE ============================
-# In production you'd typically NOT run the model locally. Instead you'd
-# point at a hosted embedding API via a key + model-name config pair, e.g.:
-#
-#   from openai import OpenAI
-#   client = OpenAI(api_key=os.environ["EMBEDDING_API_KEY"])
-#   EMBEDDING_MODEL = os.environ["EMBEDDING_MODEL"]   # e.g. "text-embedding-3-small"
-#
-#   def embed_texts(texts):
-#       resp = client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
-#       return [item.embedding for item in resp.data]
-#
-# Why prod prefers this: no model files/PyTorch/GPU to manage, scales
-# effortlessly, provider handles serving. Trade-offs: per-call cost + data
-# leaves your machine (which is exactly why privacy/scale cases self-host
-# instead, like we're doing locally here).
-#
-# IMPORTANT when switching: different models output different dimensions
-# (MiniLM=384, text-embedding-3-small=1536, voyage=1024). You must update
-# EMBEDDING_DIM in db.py to match AND re-embed your whole corpus, because
-# vectors from different models live in different spaces and aren't comparable.
-# ===================================================================
-
+# ---------- 2. EMBEDDING (Gemini API) ----------
+# Just an HTTP call to Google — no model in our memory. This is the "prod points
+# at an embedding model via a key" pattern: light app, provider does the work.
+# Note: gemini-embedding-001 accepts ONE text per request, so we loop.
+def _embed(text, task_type):
+    resp = gemini_client.models.embed_content(
+        model=EMBEDDING_MODEL,
+        contents=text,
+        config=types.EmbedContentConfig(
+            task_type=task_type,
+            output_dimensionality=EMBEDDING_OUTPUT_DIM,
+        ),
+    )
+    return resp.embeddings[0].values
+ 
+ 
 def embed_texts(texts):
-    """Embed a list of strings -> list of 384-float vectors."""
-    return _embedder.encode(texts).tolist()
-
-
+    """Embed a list of strings -> list of vectors (for stored documents)."""
+    # RETRIEVAL_DOCUMENT tunes the vector for content being stored/searched.
+    return [_embed(t, "RETRIEVAL_DOCUMENT") for t in texts]
+ 
+ 
 def embed_one(text):
-    return _embedder.encode(text).tolist()
+    """Embed a single query string -> one vector."""
+    # RETRIEVAL_QUERY tunes the vector for a search query (asymmetric to docs).
+    return _embed(text, "RETRIEVAL_QUERY")
 
 
 # ---------- 3. INGEST (offline / preload) ----------
