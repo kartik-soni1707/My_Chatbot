@@ -32,12 +32,10 @@ def extract_text(path, filename):
         with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
-    # --- PDF: enable when you add PDFs ---
-    #   pip install pdfplumber   (add to requirements.txt)
-    # elif lower.endswith(".pdf"):
-    #     import pdfplumber
-    #     with pdfplumber.open(path) as pdf:
-    #         return "\n".join(page.extract_text() or "" for page in pdf.pages)
+    elif lower.endswith(".pdf"):
+        import pdfplumber
+        with pdfplumber.open(path) as pdf:
+            return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
     # --- DOCX: enable when you add Word docs ---
     #   pip install python-docx
