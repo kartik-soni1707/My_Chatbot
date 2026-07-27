@@ -12,7 +12,7 @@ to a hosted embedding API.
 import os
 from anthropic import Anthropic
 from sentence_transformers import SentenceTransformer
-from db import insert_chunks, search_chunks
+from db import insert_chunks, search_chunks, delete_by_source
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -73,11 +73,19 @@ def embed_one(text):
 
 
 # ---------- 3. INGEST (offline / preload) ----------
-def ingest_text(text, source="manual"):
-    """Chunk a document, embed the chunks, store them. Run this ahead of time."""
+def ingest_text(text, source="manual", replace=True):
+    """Chunk a document, embed the chunks, store them. Run this ahead of time.
+ 
+    replace=True (default): delete any existing chunks with the same `source`
+    before inserting, so re-ingesting a file REPLACES its chunks instead of
+    creating duplicates. This is also how you update a changed document.
+    Set replace=False only if you deliberately want to append.
+    """
     chunks = chunk_text(text)
     if not chunks:
         return 0
+    if replace:
+        delete_by_source(source)  # clear this file's old chunks first
     embeddings = embed_texts(chunks)
     rows = [(source, chunk, emb) for chunk, emb in zip(chunks, embeddings)]
     insert_chunks(rows)

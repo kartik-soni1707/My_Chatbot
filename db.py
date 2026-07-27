@@ -83,3 +83,14 @@ def search_chunks(query_embedding, top_k=5):
                 (query_embedding, top_k),
             )
             return cur.fetchall()  # list of (content, source, distance)
+
+def delete_by_source(source):
+    """Remove all chunks that came from a given source (filename).
+    Used to avoid duplicates: delete a file's old chunks before re-inserting.
+    Also how you'd handle a document being updated or removed."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM doc_chunks WHERE source = %s;", (source,))
+            deleted = cur.rowcount
+        conn.commit()
+    return deleted
