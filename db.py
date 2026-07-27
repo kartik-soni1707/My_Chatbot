@@ -8,6 +8,8 @@ query just does a fast similarity search against them.
 import os
 import psycopg
 from pgvector.psycopg import register_vector
+from dotenv import load_dotenv
+load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 

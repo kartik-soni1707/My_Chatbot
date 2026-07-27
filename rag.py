@@ -13,6 +13,8 @@ import os
 from anthropic import Anthropic
 from sentence_transformers import SentenceTransformer
 from db import insert_chunks, search_chunks
+from dotenv import load_dotenv
+load_dotenv()
 
 # Claude handles GENERATION only (Anthropic has no embedding model).
 client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
