@@ -2,9 +2,11 @@
 FastAPI wrapper around the RAG pipeline.
 
 Endpoints:
-  GET  /health        -> quick check that it's alive
-  POST /chat          -> ask a question, get an answer  (this is what your FE calls)
-  POST /ingest        -> add a document to the knowledge base (protect / run offline)
+  GET  /health   -> quick check that it's alive
+  POST /chat     -> ask a question, get an answer  (this is what your FE calls)
+
+Ingestion is done offline by running `python ingest.py` locally (reads ./data),
+so there's no public ingest endpoint — the corpus only changes when you run it.
 
 Start locally:   uvicorn main:app --reload
 Start on Render: uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -13,14 +15,14 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 load_dotenv()
 
 from db import init_db          # noqa: E402  (import after load_dotenv)
-from rag import answer_question, ingest_text  # noqa: E402
+from rag import answer_question  # noqa: E402
 
 
 @asynccontextmanager
@@ -46,11 +48,6 @@ class ChatRequest(BaseModel):
     question: str
 
 
-class IngestRequest(BaseModel):
-    text: str
-    source: str = "manual"
-
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -61,14 +58,3 @@ def chat(req: ChatRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="question is empty")
     return answer_question(req.question)
-
-
-@app.post("/ingest")
-def ingest(req: IngestRequest, x_admin_token: str | None = Header(default=None)):
-    # Simple guard so this isn't wide open. Set ADMIN_TOKEN in your env.
-    # For a toy project you might just run ingestion locally and skip exposing this.
-    expected = os.getenv("ADMIN_TOKEN")
-    if expected and x_admin_token != expected:
-        raise HTTPException(status_code=401, detail="unauthorized")
-    count = ingest_text(req.text, source=req.source)
-    return {"ingested_chunks": count}
