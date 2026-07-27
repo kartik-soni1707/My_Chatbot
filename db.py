@@ -8,14 +8,15 @@ query just does a fast similarity search against them.
 import os
 import psycopg
 from pgvector.psycopg import register_vector
-from dotenv import load_dotenv
-load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
-# text-embedding-3-small returns 1536-dimensional vectors.
-# If you switch embedding models, change this to match.
-EMBEDDING_DIM = 1536
+# Local model all-MiniLM-L6-v2 returns 384-dimensional vectors.
+# MUST match your embedding model's output dimension, or inserts/searches fail.
+# PROD NOTE: if you switch to a hosted API model, change this to match it
+# (text-embedding-3-small=1536, voyage-3.5=1024) AND re-embed the whole corpus,
+# since vectors from different models aren't comparable.
+EMBEDDING_DIM = 384
 
 
 def get_conn():
@@ -80,5 +81,3 @@ def search_chunks(query_embedding, top_k=5):
                 (query_embedding, top_k),
             )
             return cur.fetchall()  # list of (content, source, distance)
-
-init_db()
