@@ -10,7 +10,6 @@ See the PROD notes in the EMBEDDING section for what changes when you move
 to a hosted embedding API.
 """
 import os
-from anthropic import Anthropic
 from google import genai
 from google.genai import types
 from db import insert_chunks, search_chunks, delete_by_source
