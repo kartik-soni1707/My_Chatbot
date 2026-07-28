@@ -106,6 +106,3 @@ def chat(req: ChatRequest):
         logger.exception("chat request failed")
         raise HTTPException(status_code=500, detail="Something went wrong.")
 
-@app.get("/sentry-debug")
-def trigger_error():
-    division_by_zero = 1 / 0
