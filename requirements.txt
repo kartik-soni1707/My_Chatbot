@@ -1,4 +1,5 @@
 fastapi
+sentry-sdk[fastapi]
 uvicorn[standard]
 psycopg[binary]
 pgvector
