@@ -18,8 +18,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Claude handles GENERATION only (Anthropic has no embedding model).
-client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-CHAT_MODEL = "claude-haiku-4-5-20251001"  # cheap + fast to start; swap for a bigger Claude as needed
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+CHAT_MODEL = "gemini-3-flash-preview"# cheap + fast to start; swap for a bigger Claude as needed
 
 # --- Embeddings: Google Gemini (free tier, no local model) ---
 gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -106,13 +106,15 @@ def answer_question(question, top_k=5):
     )
     user = f"Context:\n{context}\n\nQuestion: {question}"
 
-    # Claude's Messages API: system is its own arg, not a message role.
-    resp = client.messages.create(
+    # Gemini generation: system prompt goes in config; the user text in contents.
+    resp = gemini_client.models.generate_content(
         model=CHAT_MODEL,
-        max_tokens=1024,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        contents=user,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=1024,
+        ),
     )
-    answer = resp.content[0].text
+    answer = resp.text
     sources = list({src for _c, src, _d in results if src})
     return {"answer": answer, "sources": sources}

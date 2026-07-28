@@ -1,6 +1,5 @@
 fastapi
 uvicorn[standard]
-anthropic
 psycopg[binary]
 pgvector
 python-dotenv
