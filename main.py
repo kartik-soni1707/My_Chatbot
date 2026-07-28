@@ -18,7 +18,7 @@ from logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger("main")
 
-from db import init_db          # noqa: E402
+from db import init_db,save_chat          # noqa: E402
 from rag import answer_question  # noqa: E402
 
 redis_client = redis.from_url(os.environ["REDIS_URL"], decode_responses=True)
@@ -75,7 +75,12 @@ def chat(req: ChatRequest):
     try:
         result = answer_question(req.question)
         logger.info("chat answered (%d sources)", len(result["sources"]))  # ← LOG
-        return result
     except Exception:
         logger.exception("chat request failed")          # ← LOG errors + traceback
         raise HTTPException(status_code=500, detail="Something went wrong.")
+     # persist the Q&A — but don't let a save failure break the response
+    try:
+        save_chat(req.question, result["answer"])
+    except Exception:
+        logger.exception("failed to save chat")
+    return result

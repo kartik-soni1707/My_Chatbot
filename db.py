@@ -54,6 +54,17 @@ def init_db():
                 WITH (lists = 100);
                 """
             )
+                   # Permanent record of every Q&A (survives log retention).
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_log (
+                    id         BIGSERIAL PRIMARY KEY,
+                    question   TEXT NOT NULL,
+                    answer     TEXT NOT NULL,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                """
+            )
         conn.commit()
 
 
@@ -99,3 +110,15 @@ def search_chunks(query_embedding, top_k=5):
                 (vec_literal, top_k),
             )
             return cur.fetchall()  # list of (content, source, distance)
+        
+
+def save_chat(question, answer):
+    """Store one Q&A pair permanently. Unlike logs (which expire), this is a
+    durable record you can query later for analytics."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO chat_log (question, answer) VALUES (%s, %s);",
+                (question, answer),
+            )
+        conn.commit()
