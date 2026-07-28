@@ -123,7 +123,7 @@ def answer_question(question, top_k=5):
         contents=user,
         config=types.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=2048,
+            max_output_tokens=1024,
         ),
     )
     answer = resp.text
