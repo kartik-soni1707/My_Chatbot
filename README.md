@@ -1,151 +1,68 @@
 # Portfolio RAG Chatbot
 
-A retrieval-augmented chatbot that answers questions about my background, experience, and projects. Visitors ask questions on my portfolio site; the service retrieves relevant passages from my resume and supporting documents, and generates a grounded answer.
+A retrieval-augmented chatbot that answers questions about my background and projects. Retrieves relevant passages from my resume and supporting docs, then generates a grounded answer.
 
-Built as a production-shaped service rather than a notebook demo — connection handling, rate limiting, structured logging, error tracking, and persistent Q&A capture are all in place.
-
-**Live API:** `https://kartiks-chatbot.onrender.com` · **Docs:** `/docs`
-
----
-
-## How it works
+**Live:** `https://kartiks-chatbot.onrender.com/docs`
 
 ```
-OFFLINE (once, via ingest.py)
-  documents → chunk → embed → store in Postgres/pgvector
-
-ONLINE (per request, via POST /chat)
-  question → embed → vector search (top-k) → prompt with context → answer
+offline:  documents → chunk → embed → Postgres/pgvector
+online:   question → embed → top-k search → prompt with context → answer
 ```
-
-Retrieval and generation are deliberately separate concerns. Retrieval quality is measurable on its own and bounds everything downstream — if the right passage isn't retrieved, no amount of prompt tuning recovers it.
-
----
 
 ## Stack
 
-| Layer | Choice | Why |
-|---|---|---|
-| API | FastAPI + Uvicorn | Async, typed request validation, free OpenAPI docs |
-| Vector store | Postgres + pgvector (Supabase) | One database for vectors and relational data; no separate vector DB to operate |
-| Embeddings | `gemini-embedding-001` @ 768d | Hosted — keeps the container small and RAM low |
-| Generation | `gemini-3.1-flash-lite` | Extractive RAG doesn't need a frontier model; cost and latency matter more |
-| Cache / limiter | Redis | Atomic `INCR` + `EXPIRE` counter |
-| Logging | Logtail (root handler) | Ships logs from every module, survives container restarts |
-| Errors | Sentry (optional) | Tracebacks with context; activates only if `SENTRY_DSN` is set |
-| Hosting | Render | Deploys from Git, no infrastructure to manage |
+FastAPI · Postgres + pgvector (Supabase) · Redis · Gemini (`gemini-embedding-001` @ 768d for retrieval, `gemini-3.1-flash-lite` for generation) · Logtail · Sentry · Render
 
----
+One database for vectors and relational data. Hosted embeddings keep the container small enough for a 512MB instance.
 
 ## Endpoints
 
-**`GET /health`** — liveness check. Returns `{"status": "ok"}`. Used by the uptime monitor to keep the free-tier instance warm.
-
-**`POST /chat`**
-
-```json
-{ "question": "What has Kartik worked on with LLMs?" }
-```
-
-```json
-{
-  "answer": "...",
-  "sources": ["resume.pdf", "projects.md"]
-}
-```
-
-Returns `400` on an empty question, `429` when the rate limit is exceeded, `500` on generation failure.
-
----
+- `GET /health` — liveness check
+- `POST /chat` — `{"question": "..."}` → `{"answer": "...", "sources": [...]}`
 
 ## Running locally
 
 ```bash
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env                              # then fill in the values
-```
-
-Ingest your documents, then start the server:
-
-```bash
-mkdir -p data          # drop .txt, .md, or .pdf files here
+cp .env.example .env      # DATABASE_URL, REDIS_URL, GEMINI_API_KEY
+mkdir data                # drop .txt / .md / .pdf here
 python ingest.py
 uvicorn main:app --reload
 ```
 
-Open `http://localhost:8000/docs` for an interactive client.
-
-### Environment variables
-
-| Variable | Required | Purpose |
-|---|---|---|
-| `DATABASE_URL` | yes | Postgres connection string (pgvector extension required) |
-| `REDIS_URL` | yes | Redis connection string |
-| `GEMINI_API_KEY` | yes | Embeddings and generation |
-| `ALLOWED_ORIGINS` | no | Comma-separated CORS origins; defaults to `*` |
-| `SENTRY_DSN` | no | Enables error tracking |
-| `LOGTAIL_SOURCE_TOKEN` | no | Enables log shipping |
-| `LOGTAIL_HOST` | no | Logtail ingest host |
-
-`init_db()` runs on startup and is idempotent — it creates the extension, tables, and index if they don't exist.
-
----
+Optional: `ALLOWED_ORIGINS`, `SENTRY_DSN`, `LOGTAIL_SOURCE_TOKEN`, `LOGTAIL_HOST`. `init_db()` runs on startup and is idempotent.
 
 ## Design decisions
 
-**Idempotent ingestion.** `ingest_text()` deletes all chunks for a given `source` before inserting. Re-running `ingest.py` replaces a document's chunks rather than duplicating them, which also makes document updates a re-run rather than a manual cleanup.
+**Idempotent ingestion** — re-running `ingest.py` replaces a document's chunks by `source` instead of duplicating them, so updates are a re-run.
 
-**Asymmetric embedding task types.** Documents are embedded with `RETRIEVAL_DOCUMENT`, queries with `RETRIEVAL_QUERY`. The model produces different vectors for the same text depending on whether it's being stored or searched with, and using the right one measurably improves retrieval.
+**Asymmetric embeddings** — docs use `RETRIEVAL_DOCUMENT`, queries use `RETRIEVAL_QUERY`. Same text, different vector, measurably better retrieval.
 
-**768 dimensions, not the 3072 default.** `gemini-embedding-001` supports truncation. Smaller vectors mean less storage and faster search, at a quality cost small enough not to matter at this corpus size. `EMBEDDING_DIM` in `db.py` and `EMBEDDING_OUTPUT_DIM` in `rag.py` must stay in sync — vectors from different models or dimensions aren't comparable, and changing either requires re-embedding the entire corpus.
+**768 dims, not the 3072 default** — less storage, faster search, negligible quality cost at this corpus size. `EMBEDDING_DIM` and `EMBEDDING_OUTPUT_DIM` must stay in sync; changing either means re-embedding everything.
 
-**Grounding instruction in the system prompt.** The model is told to answer only from the provided context and to say it doesn't know otherwise. Without this, RAG systems confidently answer from irrelevant retrieved chunks.
-
-**Global rate limit as a cost circuit-breaker.** A single Redis counter caps total requests per hour. This protects against runaway spend on the LLM API, not against individual abuse — see limitations.
-
-**Non-blocking persistence.** A failed write to `chat_log` is logged but doesn't fail the request. The answer was already generated and paid for; bookkeeping shouldn't discard it.
-
----
+**Non-blocking persistence** — a failed `chat_log` write is logged, not raised. The answer was already generated and paid for.
 
 ## Known limitations
 
-Documented deliberately — these are understood tradeoffs, not oversights.
+Understood tradeoffs, not oversights.
 
-**The ivfflat index is built before ingestion.** `init_db()` runs at startup against an empty table, so the index builds its cluster centroids from zero rows and silently returns approximate results of poor quality. The fix is to build the index after ingestion with `lists ≈ sqrt(row_count)`, or move to HNSW, which has better recall and no empty-table failure mode.
+- **ivfflat index is built pre-ingest** — centroids come from an empty table, so approximate search quality is poor. Fix: build after ingest with `lists ≈ sqrt(rows)`, or move to HNSW.
+- **New Postgres connection per query** — handshake cost and pooler slots wasted. Fix: `psycopg_pool.ConnectionPool`.
+- **Retrieval distance computed but unused** — thresholding it would let the service abstain instead of answering from weak context.
+- **Rate limit is global, not per-identity** — a cost circuit-breaker, not abuse protection.
+- **Embedding is one request per chunk** — sequential calls against a per-minute quota. Needs batching and backoff.
+- **No retrieval eval yet** — chunk size, overlap, and top-k are untuned defaults. `chat_log` is the intended sampling frame for a golden set.
 
-**A new Postgres connection is opened per query.** `get_conn()` does a fresh connect on every call, costing a TCP and TLS handshake per request and consuming pooler connection slots. A `psycopg_pool.ConnectionPool` created at startup is the correct fix.
-
-**Retrieval distance is computed but unused.** `search_chunks` returns a cosine distance that's discarded. Thresholding on it would let the service abstain when nothing relevant is retrieved, rather than generating from weak context.
-
-**Rate limiting is global, not per-identity.** One caller can exhaust the quota for everyone. The production pattern keys on user or IP with a global ceiling on top.
-
-**Embedding is one HTTP request per chunk.** `embed_texts` loops over `_embed`, so ingesting a large document means many sequential API calls against a per-minute quota. Batching and retry with backoff would fix this.
-
-**No retrieval evaluation yet.** There's no golden set, so there's no measurement of recall@k or MRR — which means chunk size, overlap, and top-k are currently untuned defaults rather than chosen values. Accumulated `chat_log` rows are the intended sampling frame for building one.
-
-**Free-tier constraints.** The instance spins down after 15 minutes of inactivity and cold-starts in roughly a minute; an external uptime monitor pings `/health` to mitigate this. Free Postgres and Redis instances have their own expiry and pausing behaviour.
-
----
-
-## Project layout
+## Layout
 
 ```
-├── main.py             FastAPI app, routing, rate limiting, lifespan
-├── rag.py              Chunking, embedding, retrieval, generation
-├── db.py               Schema, connections, vector search, chat persistence
-├── ingest.py           Reads ./data, extracts text, calls ingest_text()
-├── logging_config.py   Root logger + Logtail handler
-├── data/               Source documents (gitignored)
-└── requirements.txt
+main.py             app, routing, rate limiting
+rag.py              chunk, embed, retrieve, generate
+db.py               schema, vector search, persistence
+ingest.py           reads ./data → ingest_text()
+logging_config.py   root logger + Logtail
 ```
-
----
 
 ## Roadmap
 
-- Retrieval eval harness — golden set, recall@k, MRR
-- Hybrid search (BM25 + vector) for exact-term queries
-- Streaming responses
-- Abstention on low-confidence retrieval
-- Connection pooling
+Retrieval eval (recall@k, MRR) · hybrid search · streaming · abstention · connection pooling
