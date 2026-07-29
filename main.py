@@ -38,7 +38,8 @@ if SENTRY_DSN:
     sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=0.2)
     logger.info("Sentry error tracking enabled")
 
-from db import init_db          # noqa: E402  (import after load_dotenv)
+
+from db import init_db,save_chat          # noqa: E402  (import after load_dotenv)
 from rag import answer_question  # noqa: E402
 
 
@@ -100,9 +101,16 @@ def chat(req: ChatRequest):
     try:
         result = answer_question(req.question)
         logger.info("chat request answered (%d sources)", len(result["sources"]))
-        return result
+        
     except Exception:
         # log the full traceback; Sentry (if enabled) also captures it
         logger.exception("chat request failed")
-        raise HTTPException(status_code=500, detail="Something went wrong.")
+        raise HTTPException(status_code=500, detail="Something went wrong.")    
+    try:
+        save_chat(req.question, result["answer"])
+        logger.info("chat saved to database")
+    except Exception as e:
+        logger.error(f"failed to save chat to database: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save chat to database.")
 
+    return result
