@@ -87,6 +87,7 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 def health():
+    logger.info("health checked haha!")
     return {"status": "ok"}
 
 
