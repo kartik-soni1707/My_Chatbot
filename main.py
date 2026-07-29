@@ -44,7 +44,7 @@ from rag import answer_question  # noqa: E402
 # --- Redis (rate limiting). Standard client over TCP; same as AWS ElastiCache. ---
 redis_client = redis.from_url(os.environ["REDIS_URL"], decode_responses=True)
 
-RATE_LIMIT_MAX = 10        # max requests...
+RATE_LIMIT_MAX = 100        # max requests...
 RATE_LIMIT_WINDOW = 3600  # ...per this many seconds (1 hour), global
 
 
