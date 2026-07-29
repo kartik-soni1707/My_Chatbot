@@ -18,7 +18,7 @@ load_dotenv()
 
 # Claude handles GENERATION only (Anthropic has no embedding model).
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-CHAT_MODEL = "gemini-3-flash-preview"# cheap + fast to start; swap for a bigger Claude as needed
+CHAT_MODEL = "gemini-3.1-flash-lite"# cheap + fast to start; swap for a bigger Claude as needed
 
 # --- Embeddings: Google Gemini (free tier, no local model) ---
 gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
