@@ -25,10 +25,8 @@ import redis
 load_dotenv()
 
 # --- Logging setup: one place, applies to all modules (rag, db, main) ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+from logging_config import setup_logging
+setup_logging()
 logger = logging.getLogger("main")
 
 # --- Sentry (optional error tracking). Only activates if SENTRY_DSN is set. ---
